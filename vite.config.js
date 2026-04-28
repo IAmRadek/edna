@@ -103,7 +103,7 @@ export default defineConfig({
 
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
-    __GIT_HASH__: JSON.stringify(child.execSync("git rev-parse --short HEAD").toString().trim()),
+    __GIT_HASH__: JSON.stringify((() => { try { return child.execSync("git rev-parse --short HEAD").toString().trim(); } catch (_) { return process.env.GIT_HASH || ""; } })()),
   },
 
   server: {
