@@ -136,6 +136,21 @@ func makeHTTPServer(serveOpts *hutil.ServeFileOptions, proxyHandler *httputil.Re
 		case "/api/currency_rates.json":
 			serverApiCurrencyRates(w, r)
 			return
+		case "/api/notes":
+			handleNotesList(w, r)
+			return
+		case "/api/note":
+			handleNote(w, r)
+			return
+		case "/api/note/create":
+			handleNoteCreate(w, r)
+			return
+		case "/api/note/rename":
+			handleNoteRename(w, r)
+			return
+		case "/api/notes/metadata":
+			handleNotesMetadata(w, r)
+			return
 		case "/.well-known/appspecific/com.chrome.devtools.json":
 			serveChromeDevToolsJSON(w, r)
 			return
@@ -226,6 +241,9 @@ func makeHTTPServer(serveOpts *hutil.ServeFileOptions, proxyHandler *httputil.Re
 	httpAddr := fmt.Sprintf(":%d", deployConfig.HTTPPort)
 	if isWinOrMac() {
 		httpAddr = "localhost" + httpAddr
+	}
+	if flgListenAddr != "" {
+		httpAddr = flgListenAddr
 	}
 	httpSrv.Addr = httpAddr
 	return httpSrv

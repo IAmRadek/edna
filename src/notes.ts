@@ -42,6 +42,14 @@ import {
   renameNoteInMetadata,
 } from "./metadata";
 import { getSettings } from "./settings.svelte";
+import {
+  serverCreateNote,
+  serverDeleteNote,
+  serverListNotes,
+  serverLoadNote,
+  serverRenameNote,
+  serverSaveNote,
+} from "./server-storage";
 import { getStats, incNoteCreateCount, incNoteDeleteCount, incNoteSaveCount } from "./state";
 import {
   getBuiltInFunctionsNote,
@@ -56,6 +64,18 @@ import { formatDateYYYYMMDDDay, len, removeDuplicates, throwIf, trimSuffix } fro
 
 // is set if we store notes on disk, null if in localStorage
 let storageFS: FileSystemDirectoryHandle | undefined;
+let storageServer = false;
+
+export function getStorageServer(): boolean {
+  return storageServer;
+}
+
+export function setStorageServer(enabled: boolean) {
+  storageServer = enabled;
+  if (enabled) {
+    clearStorageFS();
+  }
+}
 
 export function getStorageFS(): FileSystemDirectoryHandle | undefined {
   // console.log("getStorageFS:", storageFS);
@@ -65,6 +85,7 @@ export function getStorageFS(): FileSystemDirectoryHandle | undefined {
 export function setStorageFS(dh: FileSystemDirectoryHandle | undefined) {
   // console.log("setStorageFS:", dh);
   storageFS = dh;
+  storageServer = false;
 }
 
 export function clearStorageFS() {
@@ -111,6 +132,9 @@ async function getPasswordHashMust(msg: string): Promise<string> {
 }
 
 export async function dbGetDirHandle(): Promise<FileSystemDirectoryHandle | undefined> {
+  if (getStorageServer()) {
+    return;
+  }
   let dh = await db.get(kStorageDirHandleKey);
   if (!dh) return;
   setStorageFS(dh);
@@ -163,6 +187,9 @@ function notePathFromNameLS(name: string): string {
 }
 
 export function notePathFromName(name: string): string {
+  if (getStorageServer()) {
+    return notePathFromNameFS(name);
+  }
   let dh = getStorageFS();
   if (dh) {
     return notePathFromNameFS(name);
@@ -405,12 +432,13 @@ async function loadNoteNamesFS(dh: FileSystemDirectoryHandle): Promise<string[][
 
 export async function loadNoteNames(): Promise<string[]> {
   console.log("loadNoteNames");
-  let dh = getStorageFS();
   let res: string[][] = [];
-  if (!dh) {
+  if (getStorageServer()) {
+    res = await serverListNotes();
+  } else if (!getStorageFS()) {
     res = loadNoteNamesLS();
   } else {
-    res = await loadNoteNamesFS(dh);
+    res = await loadNoteNamesFS(getStorageFS()!);
   }
 
   // TODO: got a case where I had both foo.edna.txt and foo.encr.edna.txt which caused
@@ -495,20 +523,28 @@ export async function saveNote(name: string, content: string) {
     return;
   }
 
-  let dh = getStorageFS();
-  if (!dh) {
+  if (getStorageServer()) {
+    await serverSaveNote(name, content);
+  } else if (!getStorageFS()) {
     let path = notePathFromNameLS(name);
     localStorage.setItem(path, content);
   } else {
-    await writeMaybeEncryptedFS(dh, name, content);
+    await writeMaybeEncryptedFS(getStorageFS()!, name, content);
   }
   appState.isDirty = false;
   incNoteSaveCount();
 }
 
 export async function createNoteWithName(name: string, content: string | null = null) {
-  let dh = getStorageFS();
   content = fixUpNoteContent(content);
+  if (getStorageServer()) {
+    await serverCreateNote(name, content);
+    console.log("created note", name);
+    incNoteCreateCount();
+    await loadNoteNames();
+    return;
+  }
+  let dh = getStorageFS();
   if (!dh) {
     const path = notePathFromName(name);
     // TODO: should it happen that note already exists?
@@ -531,6 +567,18 @@ export async function createNoteWithName(name: string, content: string | null = 
 
 export async function appendToNote(name: string, content: string) {
   throwIf(!startsWithBlockHeader(content), "content must start with block header ~~~");
+
+  if (getStorageServer()) {
+    let oldContent = "";
+    if (noteExists(name)) {
+      oldContent = (await loadNote(name)) || "";
+      incNoteSaveCount();
+    } else {
+      incNoteCreateCount();
+    }
+    await serverSaveNote(name, oldContent + content);
+    return;
+  }
 
   let dh = getStorageFS();
   if (!dh) {
@@ -603,11 +651,12 @@ export async function loadNote(name: string): Promise<string | undefined> {
     if (openedNote) {
       res = await fsFileHandleReadTextFile(openedNote.handle);
     } else {
-      let dh = getStorageFS();
-      if (!dh) {
+      if (getStorageServer()) {
+        res = await serverLoadNote(name);
+      } else if (!getStorageFS()) {
         res = loadNoteLS(name);
       } else {
-        res = await readMaybeEncryptedNoteFS(dh, name);
+        res = await readMaybeEncryptedNoteFS(getStorageFS()!, name);
       }
     }
   }
@@ -733,11 +782,13 @@ async function loadNoteNamesMoreRobust() {
 }
 
 export async function deleteNote(name: string) {
-  let dh = getStorageFS();
-  if (!dh) {
+  if (getStorageServer()) {
+    await serverDeleteNote(name);
+  } else if (!getStorageFS()) {
     let key = notePathFromName(name);
     localStorage.removeItem(key);
   } else {
+    let dh = getStorageFS()!;
     let fileName = notePathFromNameFS(name);
     await fsDeleteFile(dh, fileName);
   }
@@ -748,6 +799,18 @@ export async function deleteNote(name: string) {
 }
 
 export async function renameNote(oldName: string, newName: string, content: string) {
+  if (getStorageServer()) {
+    await serverRenameNote(oldName, newName, content);
+    await renameNoteInMetadata(oldName, newName);
+    renameNoteInHistory(oldName, newName);
+    let settings = getSettings();
+    let idx = settings.tabs.indexOf(oldName);
+    if (idx >= 0) {
+      settings.tabs[idx] = newName;
+    }
+    await loadNoteNamesMoreRobust();
+    return;
+  }
   await createNoteWithName(newName, content);
   // update metadata and history before deleteNote() because it'll
   // remove from history and metadata
@@ -796,6 +859,9 @@ async function migrateNote(noteName: string, diskNoteNames: string[], dh: FileSy
 // just in case we pre-load them to force downloading them to local drive
 // to make future access faster
 export async function preLoadAllNotes(): Promise<number | undefined> {
+  if (getStorageServer()) {
+    return;
+  }
   let dh = getStorageFS();
   if (!dh) {
     return;
@@ -891,6 +957,9 @@ export function getNotesCount(): number {
 }
 
 export function isUsingEncryption(): boolean {
+  if (getStorageServer()) {
+    return len(encryptedNoteNames) > 0;
+  }
   let dh = getStorageFS();
   if (!dh) {
     // no encryption for local storage

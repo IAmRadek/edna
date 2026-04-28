@@ -15,8 +15,9 @@ import {
   isSystemNoteName,
   loadNoteNames,
   preLoadAllNotes,
-  setStorageFS,
+  setStorageServer,
 } from "./notes";
+import { shouldUseServerStorage } from "./server-storage";
 import { getSettings, settingsAddTab } from "./settings.svelte";
 import { isDev } from "./util";
 
@@ -28,9 +29,13 @@ export async function boot() {
   console.log("booting");
 
   getSettings();
+  let useServerStorage = shouldUseServerStorage();
+  setStorageServer(useServerStorage);
 
   let dh = await dbGetDirHandle();
-  if (dh) {
+  if (useServerStorage) {
+    console.log("storing data on the server");
+  } else if (dh) {
     console.log("storing data in the file system");
     let ok = await hasHandlePermission(dh, true);
     if (!ok) {

@@ -64,7 +64,7 @@ export const defaultSettings: Settings = {
   showSidebar: false,
   tabSize: 2,
   indentType: "spaces",
-  theme: "system",
+  theme: "dark",
   openAIKey: "",
   xAIKey: "",
   openRouterKey: "",

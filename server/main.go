@@ -13,6 +13,7 @@ import (
 
 var (
 	dataDirCached = ""
+	flgDataDir    string
 	deployConfig  = NewDeployConfig()
 	GitCommitHash string // available in production build
 )
@@ -61,6 +62,9 @@ func getDataDirMust() string {
 	if flgRunProd && u.IsLinux() {
 		dataDirCached = "/home/data/" + deployConfig.ProjectName
 	}
+	if flgDataDir != "" {
+		dataDirCached = flgDataDir
+	}
 	err := os.MkdirAll(dataDirCached, 0755)
 	must(err)
 
@@ -78,7 +82,8 @@ var (
 	// assets being served on-demand by vite
 	flgRunDev bool
 	// compiled assets embedded in the binary
-	flgRunProd bool
+	flgRunProd    bool
+	flgListenAddr string
 )
 
 func isDevOrLocal() bool {
@@ -101,6 +106,8 @@ func Main() {
 	{
 		flag.BoolVar(&flgRunDev, "run-dev", false, "run the server in dev mode")
 		flag.BoolVar(&flgRunProd, "run-prod", false, "run server in production")
+		flag.StringVar(&flgDataDir, "data-dir", "", "persistent data directory")
+		flag.StringVar(&flgListenAddr, "listen", "", "HTTP listen address, e.g. localhost:9325 or :9325")
 		flag.BoolVar(&flgDeployHetzner, "deploy", false, "deploy to hetzner")
 		flag.BoolVar(&flgSetupAndRun, "setup-and-run", false, "setup and run on the server")
 		flag.BoolVar(&flgGen, "gen", false, "generate code")

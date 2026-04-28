@@ -95,7 +95,11 @@ export default defineConfig({
     },
   },
 
-  // resolve: { alias: { "@": path.resolve(__dirname, "..") } },
+  resolve: {
+    alias: {
+      "@codemirror/state": path.resolve("node_modules/@codemirror/state"),
+    },
+  },
 
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
