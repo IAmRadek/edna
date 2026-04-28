@@ -43,7 +43,6 @@
   let { class: klass = "", extraKeymap, cursorChange, docDidChange, didLoadNote }: Props = $props();
 
   let settings = getSettings();
-  let theme = settings.theme;
 
   let editor: MultiBlockEditor;
   let currentNoteName: string;
@@ -60,8 +59,6 @@
     editor?.setLineNumberGutter(showLineNumberGutter);
     let showFoldGutter = settings.showFoldGutter;
     editor?.setFoldGutter(showFoldGutter);
-    let theme = settings.theme;
-    editor?.setTheme(theme);
     let keymap = settings.keymap;
     let emacsMetaKey = settings.emacsMetaKey;
     editor?.setKeymap(keymap, emacsMetaKey);
@@ -159,7 +156,6 @@
       setIsDirty: setIsDirty,
       createFindPanel: createFindPanel,
       extraKeymap: extraKeymap,
-      theme: theme as "dark" | "light",
       keymap: keymap as "default" | "emacs",
       emacsMetaKey: emacsMetaKey as "meta" | "alt" | "ctrl",
       showLineNumberGutter: showLineNumberGutter,

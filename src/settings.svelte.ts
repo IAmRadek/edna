@@ -41,7 +41,7 @@ export interface Settings {
   showSidebar: boolean;
   tabSize: number;
   indentType: string;
-  theme: string;
+  theme: "dark";
   openAIKey: string;
   xAIKey: string;
   openRouterKey: string;
@@ -84,6 +84,10 @@ export function createSettings(raw?: any): Settings {
         (s as any)[key] = raw[key];
       }
     }
+    // Dark is the only supported theme. Normalize older persisted
+    // "light" / "system" values so the app cannot flip modes.
+    s.theme = "dark";
+
     // backward compat: migrate currentNoteName -> currentTab
     if (raw.currentNoteName && !raw.currentTab) {
       s.currentTab = raw.currentNoteName;
@@ -250,26 +254,19 @@ export function getSettings(): Settings {
     settings.currentTab = kTabHome;
   }
   lastSettingsRaw = $state.snapshot(settings);
+  if (settingsRaw.theme !== "dark") {
+    localStorage.setItem(kSettingsPath, JSON.stringify(lastSettingsRaw, null, 2));
+  }
 
   appState.settings = settings;
+  updateWebsiteTheme();
   settingsLoaded = true;
   return appState.settings;
 }
 
-const mediaMatch = window.matchMedia("(prefers-color-scheme: dark)");
 function updateWebsiteTheme() {
-  // console.log("updateWebsiteTheme, settings.theme:", appState.settings.theme);
-  let theme = appState.settings.theme || "system";
-  if (theme === "system") {
-    theme = mediaMatch.matches ? "dark" : "light";
-  }
-  // console.log("setting theme:", theme);
-  let el = document.documentElement;
-  if (theme === "dark") {
-    el.classList.add("dark");
-  } else {
-    el.classList.remove("dark");
-  }
+  appState.settings.theme = "dark";
+  document.documentElement.classList.add("dark");
 }
 
 function saveSettings(newSettings: Settings): boolean {
@@ -325,13 +322,6 @@ export function getOverlayScrollbarOptions() {
     },
   };
 }
-
-mediaMatch.addEventListener("change", async () => {
-  if (appState.settings.theme === "system") {
-    console.log("change event listener");
-    updateWebsiteTheme();
-  }
-});
 
 export function getVersion(): string {
   // __APP_VERSION__ and __GIT_HASH__ are set in vite.config.js

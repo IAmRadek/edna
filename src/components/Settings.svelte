@@ -16,12 +16,6 @@
 
   let defFont = [kDefaultFontFamily, kDefaultFontFamily + " (default)"];
   let systemFonts = $state([defFont]);
-  let themes = [
-    ["system", "System"],
-    ["light", "Light"],
-    ["dark", "Dark"],
-  ];
-
   let spaces = [
     [1, "1 space"],
     [2, "2 spaces"],
@@ -156,17 +150,6 @@
         <option selected={size === settings.fontSize} value={size}
           >{size}px{size === defaultFontSize ? " (default)" : ""}</option
         >
-      {/each}
-    </select>
-  </div>
-
-  <div class="mt-2 flex items-center">
-    <h2 class="w-[12ch] text-right">Theme</h2>
-    <select bind:value={settings.theme}>
-      {#each themes as t}
-        {@const th = t[0]}
-        {@const label = t[1]}
-        <option selected={th === settings.theme} value={th}>{label} </option>
       {/each}
     </select>
   </div>

@@ -21,7 +21,6 @@ import { customSetup, type CreateFindPanelFn } from "./setup";
 import { heynoteBase } from "./theme/base";
 import { heynoteDark } from "./theme/dark";
 import { getFontTheme } from "./theme/font-theme";
-import { heynoteLight } from "./theme/light";
 import { todoCheckboxPlugin } from "./todo-checkbox";
 import type { SimpleRange } from "./types";
 
@@ -43,7 +42,6 @@ interface MultiBlockEditorConfig {
   createFindPanel: CreateFindPanelFn;
   extraKeymap?: KeymapSpec;
   focus?: boolean;
-  theme?: "light" | "dark";
   keymap?: "default" | "emacs";
   emacsMetaKey?: "alt" | "meta" | "ctrl";
   showLineNumberGutter?: boolean;
@@ -85,7 +83,6 @@ export class MultiBlockEditor {
     createFindPanel,
     extraKeymap,
     focus = true,
-    theme = "light",
     keymap = "default",
     emacsMetaKey,
     showLineNumberGutter = true,
@@ -145,7 +142,7 @@ export class MultiBlockEditor {
 
         this.readOnlyCompartment.of([]),
 
-        this.themeCompartment.of(theme === "dark" ? heynoteDark : heynoteLight),
+        this.themeCompartment.of(heynoteDark),
         heynoteBase,
         this.fontTheme.of(getFontTheme(fontFamily || "", fontSize || 14)),
         makeTabState(useTabs, tabSize),
@@ -289,12 +286,6 @@ export class MultiBlockEditor {
     this.view.dispatch({
       effects: this.fontTheme.reconfigure(ff),
       annotations: [heynoteEvent.of(SET_FONT), Transaction.addToHistory.of(false)],
-    });
-  }
-
-  setTheme(theme: string) {
-    this.view.dispatch({
-      effects: this.themeCompartment.reconfigure(theme === "dark" ? heynoteDark : heynoteLight),
     });
   }
 
