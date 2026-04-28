@@ -76,12 +76,12 @@ function checkboxes(view: EditorView) {
 }
 
 function toggleBoolean(view: EditorView, pos: number) {
-  let before = view.state.doc.sliceString(pos - 4, pos).toLowerCase();
+  let text = view.state.doc.sliceString(pos, pos + 4).toLowerCase();
   let change: ChangeSpec;
-  if (before === "[x] ") {
-    change = { from: pos - 4, to: pos, insert: "[ ] " };
-  } else if (before === "[ ] ") {
-    change = { from: pos - 4, to: pos, insert: "[x] " };
+  if (text === "[x] ") {
+    change = { from: pos, to: pos + 4, insert: "[ ] " };
+  } else if (text === "[ ] ") {
+    change = { from: pos, to: pos + 4, insert: "[x] " };
   } else {
     return false;
   }
