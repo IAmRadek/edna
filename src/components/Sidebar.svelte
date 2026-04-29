@@ -6,8 +6,8 @@
   import { findMatchingItems, getAltChar, hilightText, isAltNumEvent, len, makeHilightRegExp } from "../util";
   import { IconTablerStar } from "./Icons.svelte";
   import ListBox from "./ListBox.svelte";
-  import { buildNoteInfos } from "./NoteSelector.svelte";
-  import type { NoteInfo } from "./NoteSelector.svelte";
+  import { buildHierarchicalNoteItems, buildNoteInfos } from "./NoteSelector.svelte";
+  import type { FolderInfo, NoteInfo, NoteListItem } from "./NoteSelector.svelte";
 
   interface Props {
     class?: string;
@@ -28,6 +28,7 @@
   let filter = $state("");
   let hiliRegExp = $derived(makeHilightRegExp(filter));
   let altChar = getAltChar();
+  let collapsedFolders = $state(new Set<string>());
 
   function reloadNotes() {
     console.log("reloadNotes");
@@ -47,6 +48,10 @@
     return findMatchingItems(noteInfos, sanitizedFilter, "nameLC");
   });
 
+  let filteredItems = $derived.by(() => {
+    return buildHierarchicalNoteItems(filteredNoteInfos, collapsedFolders);
+  });
+
   let selectedNote: NoteInfo | undefined = $state();
   let selectedName = $state("");
 
@@ -63,9 +68,9 @@
     return `${n} of ${nItems} notes`;
   });
 
-  function selectionChanged(item: any, idx: number) {
+  function selectionChanged(item: NoteListItem | undefined, idx: number) {
     // console.log("selectionChanged:", $state.snapshot(item), idx);
-    selectedNote = item;
+    selectedNote = item?.kind === "note" ? item : undefined;
     selectedName = selectedNote ? selectedNote.name : "";
   }
 
@@ -113,6 +118,24 @@
     openNote(noteInfo.name, newTab);
   }
 
+  function toggleFolder(item: FolderInfo) {
+    let next = new Set(collapsedFolders);
+    if (next.has(item.path)) {
+      next.delete(item.path);
+    } else {
+      next.add(item.path);
+    }
+    collapsedFolders = next;
+  }
+
+  function itemClicked(item: NoteListItem, newTab: boolean) {
+    if (item.kind === "folder") {
+      toggleFolder(item);
+      return;
+    }
+    emitOpenNote(item, newTab);
+  }
+
   async function toggleStarred(noteInfo: NoteInfo) {
     // there's a noticeable UI lag when we do the obvious:
     // item.isStarred = toggleNoteStarred(item.name);
@@ -129,6 +152,19 @@
 
   let inputRef: HTMLElement;
   let listboxComp: ListBox;
+
+  function noteIndent(noteInfo: NoteInfo): string {
+    let n = noteInfo.folder ? noteInfo.folder.split("/").length : 0;
+    return `${n * 0.9}rem`;
+  }
+
+  function folderIndent(folder: FolderInfo): string {
+    return `${folder.depth * 0.9}rem`;
+  }
+
+  function folderChevron(folder: FolderInfo): string {
+    return folder.isCollapsed ? ">" : "v";
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -151,30 +187,42 @@
   </div>
   <ListBox
     bind:this={listboxComp}
-    items={filteredNoteInfos}
+    items={filteredItems}
     {selectionChanged}
-    onclick={(item, newTab) => emitOpenNote(item, newTab)}
+    onclick={(item, newTab) => itemClicked(item, newTab)}
   >
-    {#snippet renderItem(noteInfo)}
-      {@const hili = hilightText(noteInfo.name, hiliRegExp)}
-      <button
-        tabindex="-1"
-        class="-ml-1.5 cursor-pointer hover:text-yellow-600"
-        onclick={(ev) => {
-          toggleStarred(noteInfo);
-          ev.preventDefault();
-          ev.stopPropagation();
-        }}
-      >
-        {@render IconTablerStar(noteInfo.isStarred ? "var(--color-yellow-300)" : "none")}
-      </button>
-      <div class="ml-2 truncate {sysNoteCls(noteInfo) ? 'italic' : ''}">
-        {@html hili}
-      </div>
-      <div class="grow"></div>
-      <div class="ml-4 mr-2 text-xs text-gray-400 whitespace-nowrap">
-        {noteShortcut(noteInfo)}
-      </div>
+    {#snippet renderItem(item)}
+      {#if item.kind === "folder"}
+        <div
+          class="flex w-full items-center font-semibold text-gray-600 dark:text-gray-300"
+          style:padding-left={folderIndent(item)}
+        >
+          <span class="w-4 text-xs text-gray-400">{folderChevron(item)}</span>
+          <span class="truncate">{@html hilightText(item.name, hiliRegExp)}</span>
+          <span class="ml-2 text-xs text-gray-400">{item.noteCount}</span>
+        </div>
+      {:else}
+        <div class="flex w-full items-center" style:padding-left={noteIndent(item)}>
+          <button
+            tabindex="-1"
+            class="-ml-1.5 cursor-pointer hover:text-yellow-600"
+            onclick={(ev) => {
+              toggleStarred(item);
+              ev.preventDefault();
+              ev.stopPropagation();
+            }}
+          >
+            {@render IconTablerStar(item.isStarred ? "var(--color-yellow-300)" : "none")}
+          </button>
+          <div class="ml-2 truncate {sysNoteCls(item) ? 'italic' : ''}" title={item.name}>
+            <span>{@html hilightText(item.baseName, hiliRegExp)}</span>
+          </div>
+          <div class="grow"></div>
+          <div class="ml-4 mr-2 text-xs text-gray-400 whitespace-nowrap">
+            {noteShortcut(item)}
+          </div>
+        </div>
+      {/if}
     {/snippet}
   </ListBox>
 </form>

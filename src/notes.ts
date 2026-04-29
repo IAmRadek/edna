@@ -41,7 +41,6 @@ import {
   removeNoteFromMetadata,
   renameNoteInMetadata,
 } from "./metadata";
-import { getSettings } from "./settings.svelte";
 import {
   serverCreateNote,
   serverDeleteNote,
@@ -50,6 +49,7 @@ import {
   serverRenameNote,
   serverSaveNote,
 } from "./server-storage";
+import { getSettings } from "./settings.svelte";
 import { getStats, incNoteCreateCount, incNoteDeleteCount, incNoteSaveCount } from "./state";
 import {
   getBuiltInFunctionsNote,
@@ -949,6 +949,13 @@ export async function pickAnotherDirectory(): Promise<boolean> {
 
 export function sanitizeNoteName(name: string): string {
   let res = name.trim();
+  res = res.replace(/\\/g, "/");
+  res = res.replace(/\/+/g, "/");
+  res = res
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+    .join("/");
   return res;
 }
 

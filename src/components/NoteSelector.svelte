@@ -1,13 +1,28 @@
 <script module lang="ts">
   export interface NoteInfo {
     key: number;
+    kind: "note";
     name: string;
     nameLC: string;
+    folder: string;
+    baseName: string;
     isStarred: boolean;
     isArchived: boolean;
     altShortcut?: number; // if present, 1 to 9 for Alt-1 to Alt-9
     ref: HTMLElement | null;
   }
+
+  export interface FolderInfo {
+    key: string;
+    kind: "folder";
+    name: string;
+    path: string;
+    depth: number;
+    noteCount: number;
+    isCollapsed: boolean;
+  }
+
+  export type NoteListItem = NoteInfo | FolderInfo;
 
   /**
    * -1 if a < b
@@ -54,6 +69,16 @@
 
   let lastKey = 0;
 
+  function splitNotePath(name: string) {
+    let parts = name.split("/");
+    let baseName = parts.pop() || name;
+    let folder = parts.join("/");
+    return {
+      folder,
+      baseName,
+    };
+  }
+
   export function buildNoteInfo(name: string): NoteInfo {
     let isArchived = false;
     let isStarred = false;
@@ -62,10 +87,14 @@
       isStarred = !!m.isStarred;
       isArchived = !!m.isArchived;
     }
+    let pathInfo = splitNotePath(name);
     let item: NoteInfo = {
       key: lastKey,
+      kind: "note",
       name: name,
       nameLC: name.toLowerCase(),
+      folder: pathInfo.folder,
+      baseName: pathInfo.baseName,
       isStarred: isStarred,
       isArchived: isArchived,
       ref: null,
@@ -87,6 +116,60 @@
       res[i] = item;
     }
     res.sort(sortNotes);
+    return res;
+  }
+
+  export function buildHierarchicalNoteItems(noteInfos: NoteInfo[], collapsedFolders: Set<string>): NoteListItem[] {
+    let res: NoteListItem[] = [];
+    let emittedFolders = new Set<string>();
+    let folderCounts = new Map<string, number>();
+    let sortedNoteInfos = [...noteInfos].sort((a, b) => a.name.localeCompare(b.name));
+
+    for (let note of sortedNoteInfos) {
+      if (!note.folder) {
+        continue;
+      }
+      let folderParts = note.folder.split("/");
+      for (let i = 0; i < folderParts.length; i++) {
+        let folder = folderParts.slice(0, i + 1).join("/");
+        folderCounts.set(folder, (folderCounts.get(folder) || 0) + 1);
+      }
+    }
+
+    for (let note of sortedNoteInfos) {
+      let hidden = false;
+      if (note.folder) {
+        let folderParts = note.folder.split("/");
+        for (let i = 0; i < folderParts.length; i++) {
+          let folder = folderParts.slice(0, i + 1).join("/");
+          let parentFolder = folderParts.slice(0, i).join("/");
+          if (parentFolder && collapsedFolders.has(parentFolder)) {
+            hidden = true;
+            break;
+          }
+          if (!emittedFolders.has(folder)) {
+            emittedFolders.add(folder);
+            res.push({
+              key: "folder:" + folder,
+              kind: "folder",
+              name: folderParts[i]!,
+              path: folder,
+              depth: i,
+              noteCount: folderCounts.get(folder) || 0,
+              isCollapsed: collapsedFolders.has(folder),
+            });
+          }
+          if (collapsedFolders.has(folder)) {
+            hidden = true;
+            break;
+          }
+        }
+      }
+      if (!hidden) {
+        res.push(note);
+      }
+    }
+
     return res;
   }
 </script>
@@ -148,6 +231,7 @@
   let filter = $state("");
   let hiliRegExp = $derived(makeHilightRegExp(filter));
   let altChar = getAltChar();
+  let collapsedFolders = $state(new Set<string>());
 
   // TODO: why is this no longer needed?
   // function updateNoteInfos() {
@@ -174,6 +258,10 @@
     // we split the search term by space, the name of the note
     // must match all parts
     return findMatchingItems(noteInfos, sanitizedFilter, "nameLC");
+  });
+
+  let filteredItems = $derived.by(() => {
+    return buildHierarchicalNoteItems(filteredNoteInfos, collapsedFolders);
   });
 
   let selectedNote: NoteInfo | undefined = $state();
@@ -218,10 +306,10 @@
     showDelete = canOpenSelected;
   }
 
-  function selectionChanged(item: NoteInfo | undefined, idx: number) {
-    selectedNote = item;
+  function selectionChanged(item: NoteListItem | undefined, idx: number) {
+    selectedNote = item?.kind === "note" ? item : undefined;
     selectedName = selectedNote ? selectedNote.name : "";
-    recalcAvailableActions(item, sanitizedFilter);
+    recalcAvailableActions(selectedNote, sanitizedFilter);
   }
 
   function noteShortcut(note: NoteInfo): string {
@@ -283,6 +371,24 @@
     openNote(noteInfo.name, newTab);
   }
 
+  function toggleFolder(item: FolderInfo) {
+    let next = new Set(collapsedFolders);
+    if (next.has(item.path)) {
+      next.delete(item.path);
+    } else {
+      next.add(item.path);
+    }
+    collapsedFolders = next;
+  }
+
+  function itemClicked(item: NoteListItem, metaPressed: boolean) {
+    if (item.kind === "folder") {
+      toggleFolder(item);
+      return;
+    }
+    emitOpenNote(item, metaPressed);
+  }
+
   function emitCreateNote(name: string) {
     // log("create note", name);
     createNote(name);
@@ -324,6 +430,19 @@
       return "italic";
     }
     return "";
+  }
+
+  function noteIndent(noteInfo: NoteInfo): string {
+    let n = noteInfo.folder ? noteInfo.folder.split("/").length : 0;
+    return `${n * 0.9}rem`;
+  }
+
+  function folderIndent(folder: FolderInfo): string {
+    return `${folder.depth * 0.9}rem`;
+  }
+
+  function folderChevron(folder: FolderInfo): string {
+    return folder.isCollapsed ? ">" : "v";
   }
 </script>
 
@@ -489,71 +608,81 @@
   </div>
   <ListBox
     bind:this={listboxRef}
-    items={filteredNoteInfos}
+    items={filteredItems}
     {selectionChanged}
-    onclick={(item, metaPressed) => emitOpenNote(item, metaPressed)}
+    onclick={(item, metaPressed) => itemClicked(item, metaPressed)}
   >
-    {#snippet renderItem(noteInfo)}
-      {@const hili = hilightText(noteInfo.name, hiliRegExp)}
-      <div class="flex w-full relative group">
-        <button
-          tabindex="-1"
-          class="-ml-1.5 cursor-pointer hover:text-yellow-600"
-          onclick={(ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            toggleStarred(noteInfo);
-          }}
-        >
-          {@render IconTablerStar(noteInfo.isStarred ? "var(--color-yellow-300)" : "none")}
-        </button>
-        <div class="ml-2 truncate {noteCls(noteInfo)}">
-          {@html hili}
-        </div>
-        <div class="grow"></div>
-        <div class="ml-4 mr-2 text-xs text-gray-400 whitespace-nowrap">
-          {noteShortcut(noteInfo)}
-        </div>
-
+    {#snippet renderItem(item)}
+      {#if item.kind === "folder"}
         <div
-          class="absolute top-0 right-2 opacity-0 invisible group-hover:visible group-hover:opacity-100 flex items-center self-center bg-gray-100"
+          class="flex w-full items-center font-semibold text-gray-600 dark:text-gray-300"
+          style:padding-left={folderIndent(item)}
         >
-          {#if isNoteArchivable(noteInfo.name)}
-            {#if isNoteArchived(noteInfo.name)}
-              <button
-                title="unarchive note"
-                class="clickable-icon"
-                onclick={(ev) => {
-                  ev.preventDefault();
-                  ev.stopPropagation();
-                  unArchiveNote(noteInfo.name);
-                }}>{@render IconTablerArchive()}</button
-              >
-            {:else}
-              <button
-                title="archive note"
-                class="clickable-icon"
-                onclick={(ev) => {
-                  ev.preventDefault();
-                  ev.stopPropagation();
-                  archiveNote(noteInfo.name);
-                }}>{@render IconTablerArchive()}</button
-              >
-            {/if}
-          {/if}
-          <!-- {#if isNoteTrashable(noteInfo.name)}
-            <button
-              title={"permanently delete"}
-              class="clickable-icon text-red-400"
-              onclick={(ev) => {
-                ev.preventDefault();
-                ev.stopPropagation();
-                deleteNote(noteInfo.name, false);
-              }}>{@render IconTablerTrash()}</button
-            >
-          {/if} -->
+          <span class="w-4 text-xs text-gray-400">{folderChevron(item)}</span>
+          <span class="truncate">{@html hilightText(item.name, hiliRegExp)}</span>
+          <span class="ml-2 text-xs text-gray-400">{item.noteCount}</span>
         </div>
-      </div>
+      {:else}
+        <div class="flex w-full relative group" style:padding-left={noteIndent(item)}>
+          <button
+            tabindex="-1"
+            class="-ml-1.5 cursor-pointer hover:text-yellow-600"
+            onclick={(ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              toggleStarred(item);
+            }}
+          >
+            {@render IconTablerStar(item.isStarred ? "var(--color-yellow-300)" : "none")}
+          </button>
+          <div class="ml-2 truncate {noteCls(item)}" title={item.name}>
+            <span>{@html hilightText(item.baseName, hiliRegExp)}</span>
+          </div>
+          <div class="grow"></div>
+          <div class="ml-4 mr-2 text-xs text-gray-400 whitespace-nowrap">
+            {noteShortcut(item)}
+          </div>
+
+          <div
+            class="absolute top-0 right-2 opacity-0 invisible group-hover:visible group-hover:opacity-100 flex items-center self-center bg-gray-100"
+          >
+            {#if isNoteArchivable(item.name)}
+              {#if isNoteArchived(item.name)}
+                <button
+                  title="unarchive note"
+                  class="clickable-icon"
+                  onclick={(ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    unArchiveNote(item.name);
+                  }}>{@render IconTablerArchive()}</button
+                >
+              {:else}
+                <button
+                  title="archive note"
+                  class="clickable-icon"
+                  onclick={(ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    archiveNote(item.name);
+                  }}>{@render IconTablerArchive()}</button
+                >
+              {/if}
+            {/if}
+            <!-- {#if isNoteTrashable(noteInfo.name)}
+              <button
+                title={"permanently delete"}
+                class="clickable-icon text-red-400"
+                onclick={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  deleteNote(noteInfo.name, false);
+                }}>{@render IconTablerTrash()}</button
+              >
+            {/if} -->
+          </div>
+        </div>
+      {/if}
     {/snippet}
   </ListBox>
 

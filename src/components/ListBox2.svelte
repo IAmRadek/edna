@@ -8,7 +8,7 @@
 
   interface Props {
     items: any[];
-    onclick: (n: number, metaPressed: boolean) => void;
+    onclick: (item: any, metaPressed: boolean) => void;
     renderItem: Snippet<[any, number]>;
     selectionChanged?: (item: any, idx: number) => void;
     initialSelection?: number;

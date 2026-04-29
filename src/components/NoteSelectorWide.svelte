@@ -15,8 +15,8 @@
   } from "../util";
   import { IconTablerStar } from "./Icons.svelte";
   import ListBox2 from "./ListBox2.svelte";
-  import { buildNoteInfos } from "./NoteSelector.svelte";
-  import type { NoteInfo } from "./NoteSelector.svelte";
+  import { buildHierarchicalNoteItems, buildNoteInfos } from "./NoteSelector.svelte";
+  import type { FolderInfo, NoteInfo, NoteListItem } from "./NoteSelector.svelte";
 
   interface Props {
     openNote: (name: string, newTab: boolean) => void;
@@ -40,6 +40,7 @@
   let filter = $state("");
   let hiliRegExp = $derived(makeHilightRegExp(filter));
   let altChar = getAltChar();
+  let collapsedFolders = $state(new Set<string>());
 
   function updateNoteInfos() {
     // actions like re-assigning quick access shortcut do
@@ -52,7 +53,7 @@
     return sanitizeNoteName(filter);
   });
 
-  let itemsFiltered = $derived.by(() => {
+  let filteredNoteInfos = $derived.by(() => {
     // we split the search term by space, the name of the note
     // must match all parts
     if (sanitizedFilter.startsWith(">")) {
@@ -60,6 +61,10 @@
       return [];
     }
     return findMatchingItems(noteInfos, sanitizedFilter, "nameLC");
+  });
+
+  let itemsFiltered = $derived.by(() => {
+    return buildHierarchicalNoteItems(filteredNoteInfos, collapsedFolders);
   });
 
   let selectedItem: NoteInfo | undefined = $state();
@@ -82,16 +87,16 @@
     return `${n} of ${nItems} notes`;
   });
 
-  function selectionChanged(item: NoteInfo, idx: number) {
+  function selectionChanged(item: NoteListItem | undefined, idx: number) {
     // console.log("selection: ", idx, item.name);
-    selectedItem = item;
-    selectedName = item ? selectedItem.name : "";
+    selectedItem = item?.kind === "note" ? item : undefined;
+    selectedName = selectedItem ? selectedItem.name : "";
     canOpenSelected = !!selectedItem;
 
     // TODO: use lowerCase name?
     let name = sanitizeNoteName(filter);
     canCreate = len(name) > 0;
-    for (let i of itemsFiltered) {
+    for (let i of filteredNoteInfos) {
       if (i.name === name) {
         canCreate = false;
         break;
@@ -184,6 +189,24 @@
     openNote(noteInfo.name, newTab);
   }
 
+  function toggleFolder(item: FolderInfo) {
+    let next = new Set(collapsedFolders);
+    if (next.has(item.path)) {
+      next.delete(item.path);
+    } else {
+      next.add(item.path);
+    }
+    collapsedFolders = next;
+  }
+
+  function itemClicked(item: NoteListItem, newTab: boolean) {
+    if (item.kind === "folder") {
+      toggleFolder(item);
+      return;
+    }
+    emitOpenNote(item, newTab);
+  }
+
   function emitCreateNote(name: string) {
     // log("create note", name);
     createNote(name);
@@ -205,6 +228,10 @@
 
   let inputRef: HTMLInputElement;
   let listbox2Comp: ListBox2;
+
+  function folderChevron(folder: FolderInfo): string {
+    return folder.isCollapsed ? ">" : "v";
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -230,15 +257,27 @@
     bind:this={listbox2Comp}
     items={itemsFiltered}
     {selectionChanged}
-    onclick={(item: any, metaPressed: boolean) => emitOpenNote(item, metaPressed)}
+    onclick={(item: NoteListItem, metaPressed: boolean) => itemClicked(item, metaPressed)}
   >
     {#snippet renderItem(item)}
-      {@const hili = hilightText(item.name, hiliRegExp)}
-      {#if item.isStarred}
-        {@render IconTablerStar("var(--color-yellow-300)", "inline-block mt-[-3px]")}
+      {#if item.kind === "folder"}
+        <span class="font-semibold text-gray-600 dark:text-gray-300">
+          <span class="text-xs text-gray-400">{folderChevron(item)}</span>
+          {@html hilightText(item.name, hiliRegExp)}
+          <span class="text-xs text-gray-400">{item.noteCount}</span>
+        </span>
+      {:else}
+        {#if item.isStarred}
+          {@render IconTablerStar("var(--color-yellow-300)", "inline-block mt-[-3px]")}
+        {/if}
+        <span title={item.name}>
+          {#if item.folder}
+            <span class="text-gray-400 dark:text-gray-500">{@html hilightText(item.folder + "/", hiliRegExp)}</span>
+          {/if}
+          <span>{@html hilightText(item.baseName, hiliRegExp)}</span>
+        </span>
+        <span class="ml-0.5 mr-0.5 text-xs text-gray-400 whitespace-nowrap">{noteShortcut(item)}</span>
       {/if}
-      {@html hili}
-      <span class="ml-0.5 mr-0.5 text-xs text-gray-400 whitespace-nowrap">{noteShortcut(item)}</span>
     {/snippet}
   </ListBox2>
 
